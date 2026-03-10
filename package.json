@@ -1,0 +1,15 @@
+{
+  "name": "woodgrove-northwind-secure",
+  "version": "1.0.0",
+  "description": "Woodgrove Northwind Secure - Clean app with blocking Defender CLI demo",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js"
+  },
+  "author": "Woodgrove Northwind",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "ejs": "^3.1.10"
+  }
+}

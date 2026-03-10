@@ -1,0 +1,74 @@
+name: Defender CLI Scan (Blocking)
+
+# This pipeline demonstrates Defender for Cloud CLI with BLOCKING capabilities.
+# Because this repo uses a secure base image and up-to-date dependencies,
+# the scan should PASS and the pipeline succeeds.
+# If vulnerabilities are introduced, the pipeline FAILS — preventing deployment.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  security-events: write
+
+env:
+  IMAGE_NAME: woodgrove-northwind-secure
+  ALPINE_ACR_ENDPOINT: ${{ vars.ALPINE_ACR_ENDPOINT }}
+
+jobs:
+  defender-cli-blocking:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.ALPINE_ACR_ENDPOINT }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+
+      - name: Log in to Alpine ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ALPINE_ACR_ENDPOINT }}
+          username: ${{ secrets.ALPINE_ACR_USERNAME }}
+          password: ${{ secrets.ALPINE_ACR_PASSWORD }}
+
+      - name: Push image to ACR
+        run: |
+          docker push ${{ env.ALPINE_ACR_ENDPOINT }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Download Defender for Cloud CLI
+        run: |
+          curl -L -o defender "https://aka.ms/defender-cli_linux-x64"
+          chmod +x defender
+          echo "$(pwd)" >> $GITHUB_PATH
+
+      # BLOCKING: No continue-on-error — pipeline fails if vulnerabilities found
+      - name: Run Defender for Cloud CLI Scan (BLOCKING)
+        run: |
+          ./defender scan image '${{ env.ALPINE_ACR_ENDPOINT }}/${{ env.IMAGE_NAME }}:${{ github.sha }}'
+
+      - name: Find SARIF results
+        if: always()
+        id: sarif
+        run: |
+          SARIF_FILE=$(find .gdn -path '*/.r/mdvm/*/mdvm.sarif' -type f | head -1)
+          echo "sarif_file=${SARIF_FILE}" >> $GITHUB_OUTPUT
+
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && steps.sarif.outputs.sarif_file != ''
+        with:
+          sarif_file: ${{ steps.sarif.outputs.sarif_file }}
+          category: defender-cli-blocking-scan
+
+      - name: Run Microsoft Security DevOps (container-mapping)
+        if: always()
+        uses: microsoft/security-devops-action@latest
+        id: msdo
+        with:
+          tools: container-mapping
